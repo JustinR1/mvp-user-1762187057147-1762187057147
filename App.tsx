@@ -318,7 +318,6 @@ export default function App() {
 
   const SwipeableWorkoutCard = ({ workout }: { workout: ScheduledWorkout }) => {
     const translateX = useRef(new Animated.Value(0)).current;
-    const [isDeleting, setIsDeleting] = useState(false);
 
     const panResponder = useRef(
       PanResponder.create({
@@ -333,7 +332,6 @@ export default function App() {
         onPanResponderRelease: (_, gestureState) => {
           if (gestureState.dx < SWIPE_THRESHOLD) {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            setIsDeleting(true);
             Animated.timing(translateX, {
               toValue: -SCREEN_WIDTH,
               duration: 300,

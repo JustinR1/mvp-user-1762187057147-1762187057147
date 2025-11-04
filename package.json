@@ -1,5 +1,5 @@
 {
-  "name": "fitness-tracker-with-schedule",
+  "name": "fitness-tracker-fixed",
   "version": "1.0.0",
   "main": "App.tsx",
   "dependencies": {
