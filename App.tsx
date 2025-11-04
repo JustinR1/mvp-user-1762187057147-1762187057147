@@ -8,6 +8,8 @@ import {
   SafeAreaView,
   Alert,
   useColorScheme,
+  TextInput,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
@@ -31,7 +33,18 @@ interface HealthStats {
   heartRate: number;
 }
 
+interface ScheduledWorkout {
+  id: string;
+  name: string;
+  time: string;
+  duration: number;
+  emoji: string;
+  completed: boolean;
+  dayOfWeek: string;
+}
+
 type ThemeMode = 'light' | 'dark' | 'auto';
+type TabType = 'today' | 'week' | 'schedule';
 
 export default function App() {
   const systemColorScheme = useColorScheme();
@@ -71,6 +84,54 @@ export default function App() {
     },
   ]);
 
+  const [scheduledWorkouts, setScheduledWorkouts] = useState<ScheduledWorkout[]>([
+    {
+      id: 's1',
+      name: 'Morning Cardio',
+      time: '06:00 AM',
+      duration: 30,
+      emoji: '🏃',
+      completed: true,
+      dayOfWeek: 'Monday',
+    },
+    {
+      id: 's2',
+      name: 'Strength Training',
+      time: '05:00 PM',
+      duration: 45,
+      emoji: '💪',
+      completed: false,
+      dayOfWeek: 'Monday',
+    },
+    {
+      id: 's3',
+      name: 'Yoga Flow',
+      time: '07:00 AM',
+      duration: 60,
+      emoji: '🧘',
+      completed: false,
+      dayOfWeek: 'Tuesday',
+    },
+    {
+      id: 's4',
+      name: 'HIIT Session',
+      time: '06:30 PM',
+      duration: 30,
+      emoji: '🔥',
+      completed: false,
+      dayOfWeek: 'Wednesday',
+    },
+    {
+      id: 's5',
+      name: 'Swimming',
+      time: '08:00 AM',
+      duration: 45,
+      emoji: '🏊',
+      completed: false,
+      dayOfWeek: 'Thursday',
+    },
+  ]);
+
   const [healthStats, setHealthStats] = useState<HealthStats>({
     steps: 8247,
     distance: 6.2,
@@ -78,7 +139,16 @@ export default function App() {
     heartRate: 72,
   });
 
-  const [selectedTab, setSelectedTab] = useState<'today' | 'week'>('today');
+  const [selectedTab, setSelectedTab] = useState<TabType>('today');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newWorkoutName, setNewWorkoutName] = useState('');
+  const [newWorkoutTime, setNewWorkoutTime] = useState('');
+  const [newWorkoutDuration, setNewWorkoutDuration] = useState('');
+  const [selectedDay, setSelectedDay] = useState('Monday');
+  const [selectedEmoji, setSelectedEmoji] = useState('🏃');
+
+  const weekDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const workoutEmojis = ['🏃', '💪', '🧘', '🔥', '🏊', '🚴', '⛹️', '🤸'];
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -124,7 +194,7 @@ export default function App() {
     );
   };
 
-  const handleTabSwitch = (tab: 'today' | 'week') => {
+  const handleTabSwitch = (tab: TabType) => {
     Haptics.selectionAsync();
     setSelectedTab(tab);
   };
@@ -143,6 +213,59 @@ export default function App() {
     return 'phone-portrait';
   };
 
+  const handleToggleComplete = (id: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setScheduledWorkouts(prev =>
+      prev.map(workout =>
+        workout.id === id ? { ...workout, completed: !workout.completed } : workout
+      )
+    );
+  };
+
+  const handleAddScheduledWorkout = () => {
+    if (!newWorkoutName || !newWorkoutTime || !newWorkoutDuration) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    const newWorkout: ScheduledWorkout = {
+      id: 's' + Date.now(),
+      name: newWorkoutName,
+      time: newWorkoutTime,
+      duration: parseInt(newWorkoutDuration),
+      emoji: selectedEmoji,
+      completed: false,
+      dayOfWeek: selectedDay,
+    };
+
+    setScheduledWorkouts(prev => [...prev, newWorkout]);
+    setShowAddModal(false);
+    setNewWorkoutName('');
+    setNewWorkoutTime('');
+    setNewWorkoutDuration('');
+    setSelectedDay('Monday');
+    setSelectedEmoji('🏃');
+  };
+
+  const handleDeleteScheduledWorkout = (id: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Alert.alert(
+      'Delete Workout',
+      'Are you sure you want to remove this scheduled workout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            setScheduledWorkouts(prev => prev.filter(w => w.id !== id));
+          },
+        },
+      ]
+    );
+  };
+
   const colors = {
     background: isDark ? '#000000' : '#F5F7FA',
     cardBg: isDark ? '#1C1C1E' : '#FFFFFF',
@@ -151,7 +274,248 @@ export default function App() {
     border: isDark ? '#2C2C2E' : '#E5E5EA',
     statBg: isDark ? '#2C2C2E' : '#F9FAFB',
     emojiCircle: isDark ? '#2C2C2E' : '#F2F2F7',
+    modalBg: isDark ? '#1C1C1E' : '#FFFFFF',
+    inputBg: isDark ? '#2C2C2E' : '#F2F2F7',
   };
+
+  const renderScheduleContent = () => {
+    const groupedWorkouts = weekDays.map(day => ({
+      day,
+      workouts: scheduledWorkouts.filter(w => w.dayOfWeek === day),
+    }));
+
+    return (
+      <View>
+        <View style={styles.scheduleHeader}>
+          <Text style={[styles.scheduleTitle, { color: colors.text }]}>Weekly Schedule</Text>
+          <TouchableOpacity
+            style={styles.addScheduleButton}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowAddModal(true);
+            }}
+          >
+            <Ionicons name="add-circle" size={28} color="#667EEA" />
+          </TouchableOpacity>
+        </View>
+
+        {groupedWorkouts.map(({ day, workouts: dayWorkouts }) => (
+          <View key={day} style={styles.daySection}>
+            <View style={styles.daySectionHeader}>
+              <Text style={[styles.dayTitle, { color: colors.text }]}>{day}</Text>
+              <Text style={styles.dayCount}>{dayWorkouts.length} workout{dayWorkouts.length !== 1 ? 's' : ''}</Text>
+            </View>
+
+            {dayWorkouts.length === 0 ? (
+              <View style={[styles.emptyDay, { backgroundColor: colors.statBg }]}>
+                <Ionicons name="calendar-outline" size={32} color={colors.textSecondary} />
+                <Text style={[styles.emptyDayText, { color: colors.textSecondary }]}>No workouts scheduled</Text>
+              </View>
+            ) : (
+              dayWorkouts.map(workout => (
+                <TouchableOpacity
+                  key={workout.id}
+                  style={[styles.scheduledWorkoutCard, { backgroundColor: colors.cardBg }]}
+                  onPress={() => handleToggleComplete(workout.id)}
+                  onLongPress={() => handleDeleteScheduledWorkout(workout.id)}
+                  activeOpacity={0.7}
+                >
+                  <TouchableOpacity
+                    style={[
+                      styles.checkCircle,
+                      { borderColor: colors.border },
+                      workout.completed && styles.checkCircleCompleted,
+                    ]}
+                    onPress={() => handleToggleComplete(workout.id)}
+                  >
+                    {workout.completed && (
+                      <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                    )}
+                  </TouchableOpacity>
+
+                  <View style={[styles.scheduledWorkoutEmoji, { backgroundColor: colors.emojiCircle }]}>
+                    <Text style={styles.scheduledEmoji}>{workout.emoji}</Text>
+                  </View>
+
+                  <View style={styles.scheduledWorkoutInfo}>
+                    <Text
+                      style={[
+                        styles.scheduledWorkoutName,
+                        { color: colors.text },
+                        workout.completed && styles.completedText,
+                      ]}
+                    >
+                      {workout.name}
+                    </Text>
+                    <View style={styles.scheduledWorkoutMeta}>
+                      <View style={styles.metaItem}>
+                        <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+                        <Text style={[styles.metaText, { color: colors.textSecondary }]}>{workout.time}</Text>
+                      </View>
+                      <View style={styles.metaItem}>
+                        <Ionicons name="hourglass-outline" size={14} color={colors.textSecondary} />
+                        <Text style={[styles.metaText, { color: colors.textSecondary }]}>{workout.duration} min</Text>
+                      </View>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))
+            )}
+          </View>
+        ))}
+      </View>
+    );
+  };
+
+  const renderTodayContent = () => (
+    <View>
+      <View style={[styles.healthKitCard, { backgroundColor: colors.cardBg }]}>
+        <View style={styles.healthKitHeader}>
+          <Ionicons name="heart" size={24} color="#FF2D55" />
+          <Text style={[styles.healthKitTitle, { color: colors.text }]}>HealthKit Stats</Text>
+        </View>
+
+        <View style={styles.healthStatsGrid}>
+          <View style={[styles.healthStat, { backgroundColor: colors.statBg }]}>
+            <View style={[styles.healthStatIcon, { backgroundColor: colors.cardBg }]}>
+              <Ionicons name="footsteps" size={20} color="#5856D6" />
+            </View>
+            <Text style={[styles.healthStatValue, { color: colors.text }]}>
+              {healthStats.steps.toLocaleString()}
+            </Text>
+            <Text style={styles.healthStatLabel}>Steps</Text>
+          </View>
+
+          <View style={[styles.healthStat, { backgroundColor: colors.statBg }]}>
+            <View style={[styles.healthStatIcon, { backgroundColor: colors.cardBg }]}>
+              <Ionicons name="navigate" size={20} color="#34C759" />
+            </View>
+            <Text style={[styles.healthStatValue, { color: colors.text }]}>
+              {healthStats.distance.toFixed(1)} km
+            </Text>
+            <Text style={styles.healthStatLabel}>Distance</Text>
+          </View>
+
+          <View style={[styles.healthStat, { backgroundColor: colors.statBg }]}>
+            <View style={[styles.healthStatIcon, { backgroundColor: colors.cardBg }]}>
+              <Ionicons name="pulse" size={20} color="#FF3B30" />
+            </View>
+            <Text style={[styles.healthStatValue, { color: colors.text }]}>{healthStats.heartRate}</Text>
+            <Text style={styles.healthStatLabel}>Heart Rate</Text>
+          </View>
+
+          <View style={[styles.healthStat, { backgroundColor: colors.statBg }]}>
+            <View style={[styles.healthStatIcon, { backgroundColor: colors.cardBg }]}>
+              <Ionicons name="flame" size={20} color="#FF9500" />
+            </View>
+            <Text style={[styles.healthStatValue, { color: colors.text }]}>
+              {healthStats.activeMinutes}
+            </Text>
+            <Text style={styles.healthStatLabel}>Active Min</Text>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.statsContainer}>
+        <View style={styles.statCard}>
+          <LinearGradient
+            colors={['#FF6B6B', '#FF8E53']}
+            style={styles.statGradient}
+          >
+            <Ionicons name="flame" size={28} color="#FFFFFF" />
+            <Text style={styles.statValue}>{totalCalories}</Text>
+            <Text style={styles.statLabel}>Calories Burned</Text>
+          </LinearGradient>
+        </View>
+
+        <View style={styles.statCard}>
+          <LinearGradient
+            colors={['#4FACFE', '#00F2FE']}
+            style={styles.statGradient}
+          >
+            <Ionicons name="time" size={28} color="#FFFFFF" />
+            <Text style={styles.statValue}>{totalMinutes}</Text>
+            <Text style={styles.statLabel}>Active Minutes</Text>
+          </LinearGradient>
+        </View>
+
+        <View style={styles.statCard}>
+          <LinearGradient
+            colors={['#A8EDEA', '#6DD5ED']}
+            style={styles.statGradient}
+          >
+            <Ionicons name="heart" size={28} color="#FFFFFF" />
+            <Text style={styles.statValue}>{avgHeartRate}</Text>
+            <Text style={styles.statLabel}>Avg Heart Rate</Text>
+          </LinearGradient>
+        </View>
+      </View>
+
+      <View style={styles.sectionHeader}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Recent Workouts</Text>
+        <Text style={styles.workoutCount}>{workouts.length} logged</Text>
+      </View>
+
+      {workouts.map(workout => (
+        <TouchableOpacity
+          key={workout.id}
+          style={[styles.workoutCard, { backgroundColor: colors.cardBg }]}
+          onPress={() => handleWorkoutPress(workout)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.workoutEmoji, { backgroundColor: colors.emojiCircle }]}>
+            <Text style={styles.emoji}>{workout.emoji}</Text>
+          </View>
+
+          <View style={styles.workoutInfo}>
+            <Text style={[styles.workoutName, { color: colors.text }]}>{workout.name}</Text>
+            <View style={styles.workoutStats}>
+              <View style={styles.workoutStat}>
+                <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+                <Text style={[styles.workoutStatText, { color: colors.textSecondary }]}>
+                  {workout.duration} min
+                </Text>
+              </View>
+              <View style={styles.workoutStat}>
+                <Ionicons name="flame-outline" size={14} color={colors.textSecondary} />
+                <Text style={[styles.workoutStatText, { color: colors.textSecondary }]}>
+                  {workout.calories} cal
+                </Text>
+              </View>
+              {workout.heartRate && (
+                <View style={styles.workoutStat}>
+                  <Ionicons name="heart-outline" size={14} color={colors.textSecondary} />
+                  <Text style={[styles.workoutStatText, { color: colors.textSecondary }]}>
+                    {workout.heartRate} bpm
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.completeBadge}>
+            <Ionicons name="checkmark-circle" size={24} color="#34C759" />
+          </View>
+        </TouchableOpacity>
+      ))}
+
+      <TouchableOpacity
+        style={styles.addButton}
+        onPress={handleAddWorkout}
+        activeOpacity={0.8}
+      >
+        <LinearGradient
+          colors={isDark ? ['#4A148C', '#6A1B9A'] : ['#667EEA', '#764BA2']}
+          style={styles.addButtonGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+        >
+          <Ionicons name="add-circle" size={24} color="#FFFFFF" />
+          <Text style={styles.addButtonText}>Log New Workout</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+    </View>
+  );
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -173,188 +537,64 @@ export default function App() {
           </View>
         </View>
 
-        <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={[
-              styles.tab,
-              selectedTab === 'today' && styles.tabActive,
-            ]}
-            onPress={() => handleTabSwitch('today')}
-          >
-            <Text
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScrollContainer}>
+          <View style={styles.tabContainer}>
+            <TouchableOpacity
               style={[
-                styles.tabText,
-                selectedTab === 'today' && styles.tabTextActive,
+                styles.tab,
+                selectedTab === 'today' && styles.tabActive,
               ]}
+              onPress={() => handleTabSwitch('today')}
             >
-              Today
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.tab,
-              selectedTab === 'week' && styles.tabActive,
-            ]}
-            onPress={() => handleTabSwitch('week')}
-          >
-            <Text
+              <Text
+                style={[
+                  styles.tabText,
+                  selectedTab === 'today' && styles.tabTextActive,
+                ]}
+              >
+                Today
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               style={[
-                styles.tabText,
-                selectedTab === 'week' && styles.tabTextActive,
+                styles.tab,
+                selectedTab === 'week' && styles.tabActive,
               ]}
+              onPress={() => handleTabSwitch('week')}
             >
-              This Week
-            </Text>
-          </TouchableOpacity>
-        </View>
+              <Text
+                style={[
+                  styles.tabText,
+                  selectedTab === 'week' && styles.tabTextActive,
+                ]}
+              >
+                This Week
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.tab,
+                selectedTab === 'schedule' && styles.tabActive,
+              ]}
+              onPress={() => handleTabSwitch('schedule')}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  selectedTab === 'schedule' && styles.tabTextActive,
+                ]}
+              >
+                Schedule
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       </LinearGradient>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={[styles.healthKitCard, { backgroundColor: colors.cardBg }]}>
-          <View style={styles.healthKitHeader}>
-            <Ionicons name="heart" size={24} color="#FF2D55" />
-            <Text style={[styles.healthKitTitle, { color: colors.text }]}>HealthKit Stats</Text>
-          </View>
-
-          <View style={styles.healthStatsGrid}>
-            <View style={[styles.healthStat, { backgroundColor: colors.statBg }]}>
-              <View style={[styles.healthStatIcon, { backgroundColor: colors.cardBg }]}>
-                <Ionicons name="footsteps" size={20} color="#5856D6" />
-              </View>
-              <Text style={[styles.healthStatValue, { color: colors.text }]}>
-                {healthStats.steps.toLocaleString()}
-              </Text>
-              <Text style={styles.healthStatLabel}>Steps</Text>
-            </View>
-
-            <View style={[styles.healthStat, { backgroundColor: colors.statBg }]}>
-              <View style={[styles.healthStatIcon, { backgroundColor: colors.cardBg }]}>
-                <Ionicons name="navigate" size={20} color="#34C759" />
-              </View>
-              <Text style={[styles.healthStatValue, { color: colors.text }]}>
-                {healthStats.distance.toFixed(1)} km
-              </Text>
-              <Text style={styles.healthStatLabel}>Distance</Text>
-            </View>
-
-            <View style={[styles.healthStat, { backgroundColor: colors.statBg }]}>
-              <View style={[styles.healthStatIcon, { backgroundColor: colors.cardBg }]}>
-                <Ionicons name="pulse" size={20} color="#FF3B30" />
-              </View>
-              <Text style={[styles.healthStatValue, { color: colors.text }]}>{healthStats.heartRate}</Text>
-              <Text style={styles.healthStatLabel}>Heart Rate</Text>
-            </View>
-
-            <View style={[styles.healthStat, { backgroundColor: colors.statBg }]}>
-              <View style={[styles.healthStatIcon, { backgroundColor: colors.cardBg }]}>
-                <Ionicons name="flame" size={20} color="#FF9500" />
-              </View>
-              <Text style={[styles.healthStatValue, { color: colors.text }]}>
-                {healthStats.activeMinutes}
-              </Text>
-              <Text style={styles.healthStatLabel}>Active Min</Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
-            <LinearGradient
-              colors={['#FF6B6B', '#FF8E53']}
-              style={styles.statGradient}
-            >
-              <Ionicons name="flame" size={28} color="#FFFFFF" />
-              <Text style={styles.statValue}>{totalCalories}</Text>
-              <Text style={styles.statLabel}>Calories Burned</Text>
-            </LinearGradient>
-          </View>
-
-          <View style={styles.statCard}>
-            <LinearGradient
-              colors={['#4FACFE', '#00F2FE']}
-              style={styles.statGradient}
-            >
-              <Ionicons name="time" size={28} color="#FFFFFF" />
-              <Text style={styles.statValue}>{totalMinutes}</Text>
-              <Text style={styles.statLabel}>Active Minutes</Text>
-            </LinearGradient>
-          </View>
-
-          <View style={styles.statCard}>
-            <LinearGradient
-              colors={['#A8EDEA', '#6DD5ED']}
-              style={styles.statGradient}
-            >
-              <Ionicons name="heart" size={28} color="#FFFFFF" />
-              <Text style={styles.statValue}>{avgHeartRate}</Text>
-              <Text style={styles.statLabel}>Avg Heart Rate</Text>
-            </LinearGradient>
-          </View>
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Recent Workouts</Text>
-          <Text style={styles.workoutCount}>{workouts.length} logged</Text>
-        </View>
-
-        {workouts.map(workout => (
-          <TouchableOpacity
-            key={workout.id}
-            style={[styles.workoutCard, { backgroundColor: colors.cardBg }]}
-            onPress={() => handleWorkoutPress(workout)}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.workoutEmoji, { backgroundColor: colors.emojiCircle }]}>
-              <Text style={styles.emoji}>{workout.emoji}</Text>
-            </View>
-
-            <View style={styles.workoutInfo}>
-              <Text style={[styles.workoutName, { color: colors.text }]}>{workout.name}</Text>
-              <View style={styles.workoutStats}>
-                <View style={styles.workoutStat}>
-                  <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
-                  <Text style={[styles.workoutStatText, { color: colors.textSecondary }]}>
-                    {workout.duration} min
-                  </Text>
-                </View>
-                <View style={styles.workoutStat}>
-                  <Ionicons name="flame-outline" size={14} color={colors.textSecondary} />
-                  <Text style={[styles.workoutStatText, { color: colors.textSecondary }]}>
-                    {workout.calories} cal
-                  </Text>
-                </View>
-                {workout.heartRate && (
-                  <View style={styles.workoutStat}>
-                    <Ionicons name="heart-outline" size={14} color={colors.textSecondary} />
-                    <Text style={[styles.workoutStatText, { color: colors.textSecondary }]}>
-                      {workout.heartRate} bpm
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </View>
-
-            <View style={styles.completeBadge}>
-              <Ionicons name="checkmark-circle" size={24} color="#34C759" />
-            </View>
-          </TouchableOpacity>
-        ))}
-
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={handleAddWorkout}
-          activeOpacity={0.8}
-        >
-          <LinearGradient
-            colors={isDark ? ['#4A148C', '#6A1B9A'] : ['#667EEA', '#764BA2']}
-            style={styles.addButtonGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-          >
-            <Ionicons name="add-circle" size={24} color="#FFFFFF" />
-            <Text style={styles.addButtonText}>Log New Workout</Text>
-          </LinearGradient>
-        </TouchableOpacity>
+        {selectedTab === 'today' && renderTodayContent()}
+        {selectedTab === 'week' && renderTodayContent()}
+        {selectedTab === 'schedule' && renderScheduleContent()}
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>
@@ -365,6 +605,116 @@ export default function App() {
           </Text>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={showAddModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowAddModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.modalBg }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Schedule Workout</Text>
+              <TouchableOpacity onPress={() => setShowAddModal(false)}>
+                <Ionicons name="close-circle" size={28} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Workout Name</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text }]}
+                placeholder="e.g., Morning Run"
+                placeholderTextColor={colors.textSecondary}
+                value={newWorkoutName}
+                onChangeText={setNewWorkoutName}
+              />
+
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Time</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text }]}
+                placeholder="e.g., 06:00 AM"
+                placeholderTextColor={colors.textSecondary}
+                value={newWorkoutTime}
+                onChangeText={setNewWorkoutTime}
+              />
+
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Duration (minutes)</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text }]}
+                placeholder="e.g., 30"
+                placeholderTextColor={colors.textSecondary}
+                keyboardType="number-pad"
+                value={newWorkoutDuration}
+                onChangeText={setNewWorkoutDuration}
+              />
+
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Day of Week</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dayPicker}>
+                {weekDays.map(day => (
+                  <TouchableOpacity
+                    key={day}
+                    style={[
+                      styles.dayOption,
+                      { backgroundColor: colors.inputBg },
+                      selectedDay === day && styles.dayOptionSelected,
+                    ]}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      setSelectedDay(day);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.dayOptionText,
+                        { color: colors.text },
+                        selectedDay === day && styles.dayOptionTextSelected,
+                      ]}
+                    >
+                      {day.substring(0, 3)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Icon</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.emojiPicker}>
+                {workoutEmojis.map(emoji => (
+                  <TouchableOpacity
+                    key={emoji}
+                    style={[
+                      styles.emojiOption,
+                      { backgroundColor: colors.inputBg },
+                      selectedEmoji === emoji && styles.emojiOptionSelected,
+                    ]}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      setSelectedEmoji(emoji);
+                    }}
+                  >
+                    <Text style={styles.emojiOptionText}>{emoji}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <TouchableOpacity
+                style={styles.modalAddButton}
+                onPress={handleAddScheduledWorkout}
+                activeOpacity={0.8}
+              >
+                <LinearGradient
+                  colors={isDark ? ['#4A148C', '#6A1B9A'] : ['#667EEA', '#764BA2']}
+                  style={styles.modalAddButtonGradient}
+                >
+                  <Ionicons name="checkmark-circle" size={24} color="#FFFFFF" />
+                  <Text style={styles.modalAddButtonText}>Add to Schedule</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -419,15 +769,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  tabScrollContainer: {
+    marginHorizontal: -20,
+    paddingHorizontal: 20,
+  },
   tabContainer: {
     flexDirection: 'row',
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
     borderRadius: 12,
     padding: 4,
+    gap: 4,
   },
   tab: {
-    flex: 1,
     paddingVertical: 10,
+    paddingHorizontal: 20,
     borderRadius: 10,
     alignItems: 'center',
   },
@@ -619,9 +974,200 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
+  scheduleHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  scheduleTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+  },
+  addScheduleButton: {
+    padding: 4,
+  },
+  daySection: {
+    marginBottom: 28,
+  },
+  daySectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  dayTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  dayCount: {
+    fontSize: 13,
+    color: '#8E8E93',
+    fontWeight: '600',
+  },
+  emptyDay: {
+    borderRadius: 16,
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyDayText: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginTop: 8,
+  },
+  scheduledWorkoutCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  checkCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  checkCircleCompleted: {
+    backgroundColor: '#34C759',
+    borderColor: '#34C759',
+  },
+  scheduledWorkoutEmoji: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  scheduledEmoji: {
+    fontSize: 24,
+  },
+  scheduledWorkoutInfo: {
+    flex: 1,
+  },
+  scheduledWorkoutName: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  completedText: {
+    textDecorationLine: 'line-through',
+    opacity: 0.5,
+  },
+  scheduledWorkoutMeta: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  metaText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+  },
+  inputLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  input: {
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  dayPicker: {
+    marginBottom: 8,
+  },
+  dayOption: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    marginRight: 8,
+  },
+  dayOptionSelected: {
+    backgroundColor: '#667EEA',
+  },
+  dayOptionText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  dayOptionTextSelected: {
+    color: '#FFFFFF',
+  },
+  emojiPicker: {
+    marginBottom: 8,
+  },
+  emojiOption: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  emojiOptionSelected: {
+    backgroundColor: '#667EEA',
+  },
+  emojiOptionText: {
+    fontSize: 28,
+  },
+  modalAddButton: {
+    marginTop: 24,
+    marginBottom: 8,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  modalAddButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 18,
+    gap: 10,
+  },
+  modalAddButtonText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
   footer: {
     alignItems: 'center',
     paddingVertical: 16,
+    marginTop: 20,
   },
   footerText: {
     fontSize: 13,
