@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,17 @@ import {
   useColorScheme,
   TextInput,
   Modal,
+  Animated,
+  PanResponder,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const SWIPE_THRESHOLD = -100;
 
 interface Workout {
   id: string;
@@ -141,6 +147,8 @@ export default function App() {
 
   const [selectedTab, setSelectedTab] = useState<TabType>('today');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingWorkout, setEditingWorkout] = useState<ScheduledWorkout | null>(null);
   const [newWorkoutName, setNewWorkoutName] = useState('');
   const [newWorkoutTime, setNewWorkoutTime] = useState('');
   const [newWorkoutDuration, setNewWorkoutDuration] = useState('');
@@ -248,22 +256,51 @@ export default function App() {
     setSelectedEmoji('🏃');
   };
 
-  const handleDeleteScheduledWorkout = (id: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert(
-      'Delete Workout',
-      'Are you sure you want to remove this scheduled workout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            setScheduledWorkouts(prev => prev.filter(w => w.id !== id));
-          },
-        },
-      ]
+  const handleEditWorkout = (workout: ScheduledWorkout) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setEditingWorkout(workout);
+    setNewWorkoutName(workout.name);
+    setNewWorkoutTime(workout.time);
+    setNewWorkoutDuration(workout.duration.toString());
+    setSelectedDay(workout.dayOfWeek);
+    setSelectedEmoji(workout.emoji);
+    setShowEditModal(true);
+  };
+
+  const handleUpdateWorkout = () => {
+    if (!editingWorkout || !newWorkoutName || !newWorkoutTime || !newWorkoutDuration) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setScheduledWorkouts(prev =>
+      prev.map(workout =>
+        workout.id === editingWorkout.id
+          ? {
+              ...workout,
+              name: newWorkoutName,
+              time: newWorkoutTime,
+              duration: parseInt(newWorkoutDuration),
+              emoji: selectedEmoji,
+              dayOfWeek: selectedDay,
+            }
+          : workout
+      )
     );
+
+    setShowEditModal(false);
+    setEditingWorkout(null);
+    setNewWorkoutName('');
+    setNewWorkoutTime('');
+    setNewWorkoutDuration('');
+    setSelectedDay('Monday');
+    setSelectedEmoji('🏃');
+  };
+
+  const handleDeleteScheduledWorkout = (id: string) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setScheduledWorkouts(prev => prev.filter(w => w.id !== id));
   };
 
   const colors = {
@@ -276,6 +313,116 @@ export default function App() {
     emojiCircle: isDark ? '#2C2C2E' : '#F2F2F7',
     modalBg: isDark ? '#1C1C1E' : '#FFFFFF',
     inputBg: isDark ? '#2C2C2E' : '#F2F2F7',
+    deleteBg: '#FF3B30',
+  };
+
+  const SwipeableWorkoutCard = ({ workout }: { workout: ScheduledWorkout }) => {
+    const translateX = useRef(new Animated.Value(0)).current;
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    const panResponder = useRef(
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gestureState) => {
+          return Math.abs(gestureState.dx) > 10;
+        },
+        onPanResponderMove: (_, gestureState) => {
+          if (gestureState.dx < 0) {
+            translateX.setValue(Math.max(gestureState.dx, -120));
+          }
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          if (gestureState.dx < SWIPE_THRESHOLD) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            setIsDeleting(true);
+            Animated.timing(translateX, {
+              toValue: -SCREEN_WIDTH,
+              duration: 300,
+              useNativeDriver: true,
+            }).start(() => {
+              handleDeleteScheduledWorkout(workout.id);
+            });
+          } else {
+            Animated.spring(translateX, {
+              toValue: 0,
+              useNativeDriver: true,
+              tension: 100,
+              friction: 10,
+            }).start();
+          }
+        },
+      })
+    ).current;
+
+    return (
+      <View style={styles.swipeableContainer}>
+        <View style={[styles.deleteBackground, { backgroundColor: colors.deleteBg }]}>
+          <Ionicons name="trash" size={24} color="#FFFFFF" />
+          <Text style={styles.deleteText}>Delete</Text>
+        </View>
+
+        <Animated.View
+          style={[
+            styles.swipeableCard,
+            {
+              transform: [{ translateX }],
+            },
+          ]}
+          {...panResponder.panHandlers}
+        >
+          <TouchableOpacity
+            style={[styles.scheduledWorkoutCard, { backgroundColor: colors.cardBg }]}
+            onPress={() => handleToggleComplete(workout.id)}
+            activeOpacity={0.7}
+          >
+            <TouchableOpacity
+              style={[
+                styles.checkCircle,
+                { borderColor: colors.border },
+                workout.completed && styles.checkCircleCompleted,
+              ]}
+              onPress={() => handleToggleComplete(workout.id)}
+            >
+              {workout.completed && (
+                <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+              )}
+            </TouchableOpacity>
+
+            <View style={[styles.scheduledWorkoutEmoji, { backgroundColor: colors.emojiCircle }]}>
+              <Text style={styles.scheduledEmoji}>{workout.emoji}</Text>
+            </View>
+
+            <View style={styles.scheduledWorkoutInfo}>
+              <Text
+                style={[
+                  styles.scheduledWorkoutName,
+                  { color: colors.text },
+                  workout.completed && styles.completedText,
+                ]}
+              >
+                {workout.name}
+              </Text>
+              <View style={styles.scheduledWorkoutMeta}>
+                <View style={styles.metaItem}>
+                  <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+                  <Text style={[styles.metaText, { color: colors.textSecondary }]}>{workout.time}</Text>
+                </View>
+                <View style={styles.metaItem}>
+                  <Ionicons name="hourglass-outline" size={14} color={colors.textSecondary} />
+                  <Text style={[styles.metaText, { color: colors.textSecondary }]}>{workout.duration} min</Text>
+                </View>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.editButton}
+              onPress={() => handleEditWorkout(workout)}
+            >
+              <Ionicons name="create-outline" size={22} color="#667EEA" />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
+    );
   };
 
   const renderScheduleContent = () => {
@@ -299,6 +446,13 @@ export default function App() {
           </TouchableOpacity>
         </View>
 
+        <View style={[styles.infoCard, { backgroundColor: colors.cardBg }]}>
+          <Ionicons name="information-circle" size={20} color="#667EEA" />
+          <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+            Tap to complete • Tap edit icon to modify • Swipe left to delete
+          </Text>
+        </View>
+
         {groupedWorkouts.map(({ day, workouts: dayWorkouts }) => (
           <View key={day} style={styles.daySection}>
             <View style={styles.daySectionHeader}>
@@ -313,52 +467,7 @@ export default function App() {
               </View>
             ) : (
               dayWorkouts.map(workout => (
-                <TouchableOpacity
-                  key={workout.id}
-                  style={[styles.scheduledWorkoutCard, { backgroundColor: colors.cardBg }]}
-                  onPress={() => handleToggleComplete(workout.id)}
-                  onLongPress={() => handleDeleteScheduledWorkout(workout.id)}
-                  activeOpacity={0.7}
-                >
-                  <TouchableOpacity
-                    style={[
-                      styles.checkCircle,
-                      { borderColor: colors.border },
-                      workout.completed && styles.checkCircleCompleted,
-                    ]}
-                    onPress={() => handleToggleComplete(workout.id)}
-                  >
-                    {workout.completed && (
-                      <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-                    )}
-                  </TouchableOpacity>
-
-                  <View style={[styles.scheduledWorkoutEmoji, { backgroundColor: colors.emojiCircle }]}>
-                    <Text style={styles.scheduledEmoji}>{workout.emoji}</Text>
-                  </View>
-
-                  <View style={styles.scheduledWorkoutInfo}>
-                    <Text
-                      style={[
-                        styles.scheduledWorkoutName,
-                        { color: colors.text },
-                        workout.completed && styles.completedText,
-                      ]}
-                    >
-                      {workout.name}
-                    </Text>
-                    <View style={styles.scheduledWorkoutMeta}>
-                      <View style={styles.metaItem}>
-                        <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
-                        <Text style={[styles.metaText, { color: colors.textSecondary }]}>{workout.time}</Text>
-                      </View>
-                      <View style={styles.metaItem}>
-                        <Ionicons name="hourglass-outline" size={14} color={colors.textSecondary} />
-                        <Text style={[styles.metaText, { color: colors.textSecondary }]}>{workout.duration} min</Text>
-                      </View>
-                    </View>
-                  </View>
-                </TouchableOpacity>
+                <SwipeableWorkoutCard key={workout.id} workout={workout} />
               ))
             )}
           </View>
@@ -715,6 +824,116 @@ export default function App() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={showEditModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowEditModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.modalBg }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Edit Workout</Text>
+              <TouchableOpacity onPress={() => setShowEditModal(false)}>
+                <Ionicons name="close-circle" size={28} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Workout Name</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text }]}
+                placeholder="e.g., Morning Run"
+                placeholderTextColor={colors.textSecondary}
+                value={newWorkoutName}
+                onChangeText={setNewWorkoutName}
+              />
+
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Time</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text }]}
+                placeholder="e.g., 06:00 AM"
+                placeholderTextColor={colors.textSecondary}
+                value={newWorkoutTime}
+                onChangeText={setNewWorkoutTime}
+              />
+
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Duration (minutes)</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text }]}
+                placeholder="e.g., 30"
+                placeholderTextColor={colors.textSecondary}
+                keyboardType="number-pad"
+                value={newWorkoutDuration}
+                onChangeText={setNewWorkoutDuration}
+              />
+
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Day of Week</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dayPicker}>
+                {weekDays.map(day => (
+                  <TouchableOpacity
+                    key={day}
+                    style={[
+                      styles.dayOption,
+                      { backgroundColor: colors.inputBg },
+                      selectedDay === day && styles.dayOptionSelected,
+                    ]}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      setSelectedDay(day);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.dayOptionText,
+                        { color: colors.text },
+                        selectedDay === day && styles.dayOptionTextSelected,
+                      ]}
+                    >
+                      {day.substring(0, 3)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Icon</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.emojiPicker}>
+                {workoutEmojis.map(emoji => (
+                  <TouchableOpacity
+                    key={emoji}
+                    style={[
+                      styles.emojiOption,
+                      { backgroundColor: colors.inputBg },
+                      selectedEmoji === emoji && styles.emojiOptionSelected,
+                    ]}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      setSelectedEmoji(emoji);
+                    }}
+                  >
+                    <Text style={styles.emojiOptionText}>{emoji}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <TouchableOpacity
+                style={styles.modalAddButton}
+                onPress={handleUpdateWorkout}
+                activeOpacity={0.8}
+              >
+                <LinearGradient
+                  colors={isDark ? ['#4A148C', '#6A1B9A'] : ['#667EEA', '#764BA2']}
+                  style={styles.modalAddButtonGradient}
+                >
+                  <Ionicons name="checkmark-circle" size={24} color="#FFFFFF" />
+                  <Text style={styles.modalAddButtonText}>Save Changes</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -978,7 +1197,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 16,
   },
   scheduleTitle: {
     fontSize: 26,
@@ -986,6 +1205,19 @@ const styles = StyleSheet.create({
   },
   addScheduleButton: {
     padding: 4,
+  },
+  infoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 20,
+    gap: 8,
+  },
+  infoText: {
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
   },
   daySection: {
     marginBottom: 28,
@@ -1016,12 +1248,34 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginTop: 8,
   },
+  swipeableContainer: {
+    marginBottom: 10,
+    position: 'relative',
+  },
+  deleteBackground: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 100,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 4,
+  },
+  deleteText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  swipeableCard: {
+    width: '100%',
+  },
   scheduledWorkoutCard: {
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 16,
     padding: 14,
-    marginBottom: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -1076,6 +1330,10 @@ const styles = StyleSheet.create({
   metaText: {
     fontSize: 13,
     fontWeight: '500',
+  },
+  editButton: {
+    padding: 8,
+    marginLeft: 4,
   },
   modalOverlay: {
     flex: 1,
